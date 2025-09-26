@@ -169,15 +169,18 @@ class Recorder:
         return cmd
 
     def _move_completed_temp_videos(self):
+        MIN_FILE_SIZE_BYTES = 10e3 # 10KB
+
         # For each completed .mkv file
         for temp_mkv_video in self._get_completed_temp_videos():
+            temp_mkv_path = temp_mkv_video.get_filepath()
+
             try:
                 self._log_info(f'Moving {temp_mkv_video.get_filename()}...')
 
                 # Get all paths
                 date_str = temp_mkv_video.get_datetime().date().isoformat()
 
-                temp_mkv_path = temp_mkv_video.get_filepath()
                 temp_mp4_path = temp_mkv_path.replace(self._TEMP_EXTENSION, self._FINAL_EXTENSION)
                 final_mp4_path = os.path.join(self._video_dirpath, date_str, os.path.basename(temp_mp4_path))
 
@@ -194,6 +197,13 @@ class Recorder:
                 os.remove(temp_mkv_path)
             except Exception as e:
                 self._log_error(f'Failed to move {temp_mkv_video.get_filename()}: {e}')
+
+                # If file is very small, delete it
+                if os.stat(temp_mkv_path).st_size < MIN_FILE_SIZE_BYTES:
+                    self._log_info(f'Temp video {temp_mkv_video.get_filename()} appears broken, deleting...')
+                    os.remove(temp_mkv_path)
+            except Exception as e:
+                self._log_error(f'Failed to handle {temp_mkv_video.get_filename()}: {e}')
 
     def _get_completed_temp_videos(self):
         # List of files ending in .mkv
