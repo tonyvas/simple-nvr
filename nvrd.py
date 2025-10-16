@@ -26,22 +26,25 @@ def join_threads(threads:list):
 def setup_recorder(storage_dirpath:str, name:str, config:dict):
     try:
         SOURCE_KEY = 'source'
+        TIMEZONE_KEY = 'timezone'
         SEGMENT_DURATION_KEY = 'segment-duration-sec'
         RECORD_AUDIO_KEY = 'record-audio'
 
         RECORD_AUDIO_DEFAULT = True
+        TIMEZONE_DEFAULT = "Etc/UTC"
 
         monitor_dirpath = os.path.join(storage_dirpath, name)
         source = config[SOURCE_KEY]
         segment_duration_sec = int(config[SEGMENT_DURATION_KEY])
         record_audio = config[RECORD_AUDIO_KEY] if RECORD_AUDIO_KEY in config else RECORD_AUDIO_DEFAULT
+        timezone = config[TIMEZONE_KEY] if TIMEZONE_KEY in config else TIMEZONE_DEFAULT
 
         if segment_duration_sec <= 0:
             raise Exception(f'Segment duration cannot be negative or zero!')
 
         logger = Logger(os.path.join(LOG_DIRPATH, name, 'recorder.log'))
 
-        return Recorder(logger, monitor_dirpath, name, source, segment_duration_sec, record_audio)
+        return Recorder(logger, monitor_dirpath, name, source, timezone, segment_duration_sec, record_audio)
     except Exception as e:
         raise Exception(f'Failed to setup recorder {name}: {e}')
 

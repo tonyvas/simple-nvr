@@ -9,11 +9,12 @@ class Recorder:
     _TEMP_EXTENSION = '.mkv'
     _FINAL_EXTENSION = '.mp4'
 
-    def __init__(self, logger:Logger, storage_dirpath:str, name:str, source:str, segment_duration_sec:int, record_audio:bool=True):
+    def __init__(self, logger:Logger, storage_dirpath:str, name:str, source:str, timezone:str, segment_duration_sec:int, record_audio:bool=True):
         self._logger = logger
         self._storage_dirpath = storage_dirpath
         self._name = name
         self._source = source
+        self._timezone = timezone
         self._segment_duration_sec = segment_duration_sec
         self._record_audio = record_audio
         
@@ -147,6 +148,9 @@ class Recorder:
             '-segment_atclocktime', '1',
             '-reset_timestamps', '1'
         ]
+        METADATA_ARGS = [
+            '-metadata', f'timezone={self._timezone}'
+        ]
         OUTPUT_ARGS = ['-y', os.path.join(self._temp_dirpath, '%s.mkv')]
 
         cmd = ['ffmpeg']
@@ -162,7 +166,7 @@ class Recorder:
             for arg in NO_ACODEC_ARGS:
                 cmd.append(arg)
 
-        for arg_list in [ SEGMENT_ARGS, OUTPUT_ARGS ]:
+        for arg_list in [ SEGMENT_ARGS, METADATA_ARGS, OUTPUT_ARGS ]:
             for arg in arg_list:
                 cmd.append(arg)
 
