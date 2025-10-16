@@ -185,11 +185,17 @@ class Recorder:
                 temp_mp4_path = temp_mkv_path.replace(self._TEMP_EXTENSION, self._FINAL_EXTENSION)
                 final_mp4_path = os.path.join(self._video_dirpath, date_str, os.path.basename(temp_mp4_path))
 
+                # Embed timezone and start time in metadata as JSON, because .mp4 doesn't support random tags
+                metadata = {
+                    'timezone': self._timezone,
+                    'utc_start': temp_mkv_video.get_datetime().isoformat()
+                }
+
                 # Make directory for final path
                 os.makedirs(os.path.dirname(final_mp4_path), exist_ok=True)
 
                 # Convert temp mkv to mp4
-                self._mkv_to_mp4(temp_mkv_path, temp_mp4_path)
+                self._mkv_to_mp4(temp_mkv_path, temp_mp4_path, metadata)
                 
                 # Move mp4 from temp to final directory
                 shutil.move(temp_mp4_path, final_mp4_path)
@@ -218,11 +224,8 @@ class Recorder:
         # Return all videos except the last
         return sorted(videos)[:-1]
 
-    def _mkv_to_mp4(self, input_path, output_path):
+    def _mkv_to_mp4(self, input_path, output_path, metadata):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
-        # Embed timezone in metadata as JSON, because .mp4 doesn't support random tags
-        metadata = { 'timezone': self._timezone }
 
         ffmpeg_cmd = [
             'ffmpeg',
