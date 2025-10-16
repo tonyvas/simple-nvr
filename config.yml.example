@@ -18,9 +18,10 @@ monitors:
         # Max duration of video segments in seconds
         # segment-duration-sec: 300
 
-	# Camera's local timezone
-	# Embeds this into each segment's metadata under "timezone"
-	# timezone: Etc/UTC
+        # Camera's local timezone
+        # Embeds this into each segment's metadata as JSON under the "comment" tag
+        # as MP4 doesn't support arbitrary metadata tags
+        # timezone: Etc/UTC
 
         # Whether or not to include audio
         # record-audio: true

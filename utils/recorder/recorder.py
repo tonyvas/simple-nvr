@@ -1,4 +1,4 @@
-import threading, subprocess, os, psutil, shutil
+import threading, subprocess, os, psutil, shutil, json
 from time import sleep
 from datetime import datetime, timezone
 
@@ -148,9 +148,6 @@ class Recorder:
             '-segment_atclocktime', '1',
             '-reset_timestamps', '1'
         ]
-        METADATA_ARGS = [
-            '-metadata', f'timezone={self._timezone}'
-        ]
         OUTPUT_ARGS = ['-y', os.path.join(self._temp_dirpath, '%s.mkv')]
 
         cmd = ['ffmpeg']
@@ -166,7 +163,7 @@ class Recorder:
             for arg in NO_ACODEC_ARGS:
                 cmd.append(arg)
 
-        for arg_list in [ SEGMENT_ARGS, METADATA_ARGS, OUTPUT_ARGS ]:
+        for arg_list in [ SEGMENT_ARGS, OUTPUT_ARGS ]:
             for arg in arg_list:
                 cmd.append(arg)
 
@@ -224,12 +221,16 @@ class Recorder:
     def _mkv_to_mp4(self, input_path, output_path):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
+        # Embed timezone in metadata as JSON, because .mp4 doesn't support random tags
+        metadata = { 'timezone': self._timezone }
+
         ffmpeg_cmd = [
             'ffmpeg',
             '-loglevel', 'error',
             '-threads', '2',
             '-i', input_path,
             '-c', 'copy',
+            '-metadata', f'comment={json.dumps(metadata)}',
             '-y', output_path
         ]
 
