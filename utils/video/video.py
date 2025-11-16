@@ -16,17 +16,17 @@ class Video:
     def get_filename(self):
         return os.path.basename(self._filepath)
 
+    def get_filename_no_ext(self):
+        return self.get_filename().split('.')[0]
+
+    def get_datetime(self):
+        raise NotImplementedError('No get_datetime() method available for base Video class')
+
     def get_size(self):
         return os.path.getsize(self._filepath)
 
-    def get_datetime(self):
-        unix_timestamp = int(self.get_filename().split('.')[0])
-
-        return datetime.fromtimestamp(unix_timestamp, tz=timezone.utc)
-
     def get_age(self):
         now = datetime.now(tz=timezone.utc)
-
         return now - self.get_datetime()
 
     def get_age_seconds(self):

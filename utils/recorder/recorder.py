@@ -1,13 +1,14 @@
 import threading, subprocess, os, psutil, shutil, json
 from time import sleep
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from ..logger import Logger
-from ..video import Video
+from ..video import FinalVideo, TempVideo
 
 class Recorder:
-    _TEMP_EXTENSION = '.mkv'
-    _FINAL_EXTENSION = '.mp4'
+    _TEMP_EXTENSION = 'mkv'
+    _FINAL_EXTENSION = 'mp4'
 
     def __init__(self, logger:Logger, storage_dirpath:str, name:str, source:str, timezone:str, segment_duration_sec:int, record_audio:bool=True):
         self._logger = logger
@@ -40,10 +41,10 @@ class Recorder:
         for dirpath, dirnames, filenames in os.walk(self._video_dirpath):
             for filename in filenames:
                 # Ignore non-video files
-                if not filename.endswith(self._FINAL_EXTENSION):
+                if not filename.endswith('.'+self._FINAL_EXTENSION):
                     continue
 
-                videos.append(Video(os.path.join(dirpath, filename)))
+                videos.append(FinalVideo(os.path.join(dirpath, filename)))
 
         # Return videos ordered by date
         return sorted(videos)
@@ -180,35 +181,33 @@ class Recorder:
                 self._log_info(f'Moving {temp_mkv_video.get_filename()}...')
 
                 # Get all paths
-                date_str = temp_mkv_video.get_datetime().date().isoformat()
+                utc_datetime = temp_mkv_video.get_datetime()
+                local_datetime = utc_datetime.astimezone(ZoneInfo(self._timezone))
 
-                temp_mp4_path = temp_mkv_path.replace(self._TEMP_EXTENSION, self._FINAL_EXTENSION)
-                final_mp4_path = os.path.join(self._video_dirpath, date_str, os.path.basename(temp_mp4_path))
-
-                # Embed timezone and start time in metadata as JSON, because .mp4 doesn't support random tags
-                metadata = {
-                    'timezone': self._timezone,
-                    'utc_start': temp_mkv_video.get_datetime().isoformat()
-                }
+                temp_mp4_path = temp_mkv_path.replace('.'+self._TEMP_EXTENSION, '.'+self._FINAL_EXTENSION)
+                
+                final_mp4_name = FinalVideo.format_name(utc_datetime, local_datetime, self._FINAL_EXTENSION)
+                final_mp4_dir = local_datetime.date().isoformat()
+                final_mp4_path = os.path.join(self._video_dirpath, final_mp4_dir, final_mp4_name)
 
                 # Make directory for final path
                 os.makedirs(os.path.dirname(final_mp4_path), exist_ok=True)
 
                 # Convert temp mkv to mp4
-                self._mkv_to_mp4(temp_mkv_path, temp_mp4_path, metadata)
+                self._mkv_to_mp4(temp_mkv_path, temp_mp4_path)
                 
                 # Move mp4 from temp to final directory
                 shutil.move(temp_mp4_path, final_mp4_path)
                 
                 # Delete original temp mkv
-                os.remove(temp_mkv_path)
+                temp_mkv_video.delete()
             except Exception as e:
                 self._log_error(f'Failed to move {temp_mkv_video.get_filename()}: {e}')
 
                 # If file is very small, delete it
                 if os.stat(temp_mkv_path).st_size < MIN_FILE_SIZE_BYTES:
                     self._log_info(f'Temp video {temp_mkv_video.get_filename()} appears broken, deleting...')
-                    os.remove(temp_mkv_path)
+                    temp_mkv_video.delete()
             except Exception as e:
                 self._log_error(f'Failed to handle {temp_mkv_video.get_filename()}: {e}')
 
@@ -216,15 +215,15 @@ class Recorder:
         # List of files ending in .mkv
         videos = []
         for filename in os.listdir(self._temp_dirpath):
-            if not filename.endswith(self._TEMP_EXTENSION):
+            if not filename.endswith('.'+self._TEMP_EXTENSION):
                 continue
 
-            videos.append(Video(os.path.join(self._temp_dirpath, filename)))
+            videos.append(TempVideo(os.path.join(self._temp_dirpath, filename)))
 
         # Return all videos except the last
         return sorted(videos)[:-1]
 
-    def _mkv_to_mp4(self, input_path, output_path, metadata):
+    def _mkv_to_mp4(self, input_path, output_path):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         ffmpeg_cmd = [
@@ -233,7 +232,6 @@ class Recorder:
             '-threads', '2',
             '-i', input_path,
             '-c', 'copy',
-            '-metadata', f'comment={json.dumps(metadata)}',
             '-y', output_path
         ]
 
