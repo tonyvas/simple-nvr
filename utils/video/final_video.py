@@ -42,3 +42,15 @@ class FinalVideo(Video):
         secs = time_str[4:6]
 
         return datetime(year, month, day, hour, mins, secs)
+
+    def get_thumbnail_path(self):
+        return os.path.join(self.get_dirpath(), f'{self.get_filename_no_ext()}.jpg')
+
+    def delete(self, remove_dir=False):
+        if not self.exists():
+            raise Exception(f'Video does not exist at current location!')
+
+        if os.path.exists(self.get_thumbnail_path()):
+            os.remove(self.get_thumbnail_path())
+            
+        super().delete(remove_dir)

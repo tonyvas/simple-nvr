@@ -98,6 +98,9 @@ class Recorder:
     def _log_info(self, message):
         self._logger.log_info(f'{self._name}: {message}')
 
+    def _log_warning(self, message):
+        self._logger.log_warning(f'{self._name}: {message}')
+
     def _log_error(self, message):
         self._logger.log_error(f'{self._name}: {message}')
 
@@ -189,6 +192,7 @@ class Recorder:
                 final_mp4_name = FinalVideo.format_name(utc_datetime, local_datetime, self._FINAL_EXTENSION)
                 final_mp4_dir = local_datetime.date().isoformat()
                 final_mp4_path = os.path.join(self._video_dirpath, final_mp4_dir, final_mp4_name)
+                final_mp4_video = FinalVideo(final_mp4_path)
 
                 # Make directory for final path
                 os.makedirs(os.path.dirname(final_mp4_path), exist_ok=True)
@@ -199,6 +203,11 @@ class Recorder:
                 # Move mp4 from temp to final directory
                 shutil.move(temp_mp4_path, final_mp4_path)
                 
+                try:
+                    self._generate_thumbnail(final_mp4_path, final_mp4_video.get_thumbnail_path())
+                except Exception as e:
+                    self._log_warning(f'Failed to create thumbnail: {e}')
+
                 # Delete original temp mkv
                 temp_mkv_video.delete()
             except Exception as e:
@@ -239,3 +248,20 @@ class Recorder:
         if proc.returncode != 0:
             stderr = proc.stderr.decode('utf-8')
             raise Exception(f'Failed to convert MKV to MP4: {stderr}')
+
+    def _generate_thumbnail(self, video_path, thumb_path):
+        os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', f'{video_path}',
+            '-ss', '1',
+            '-vframes', '1',
+            '-s', '720x480',
+            '-q:v', '2',
+            f'{thumb_path}'
+        ]
+
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if proc.returncode != 0:
+            stderr = proc.stderr.decode('utf-8')
+            raise Exception(f'Failed to generate thumbnail: {stderr}')
