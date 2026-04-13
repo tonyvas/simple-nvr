@@ -89,6 +89,12 @@ class Recorder:
             for thread in self._threads:
                 thread.join()
 
+            try:
+                self._logger.log_info('Cleaning up temporary videos')
+                self._move_completed_temp_videos()
+            except Exception as e:
+                self._logger.log_warning('Failed to clean up temporary videos')
+
             self._logger.log_info('Recorder stopped!')
         except Exception as e:
             message = f'Failed to stop: {e}'
@@ -225,16 +231,20 @@ class Recorder:
                     temp_mkv_video.delete()
 
     def _get_completed_temp_videos(self):
-        # List of files ending in .mkv
         videos = []
+        
+        # Scan temp video dir
         for filename in os.listdir(self._temp_dirpath):
             if not filename.endswith('.'+self._TEMP_EXTENSION):
+                # Skip if not video
                 continue
 
-            videos.append(TempVideo(os.path.join(self._temp_dirpath, filename)))
+            video = TempVideo(os.path.join(self._temp_dirpath, filename))
+            if not video.is_open():
+                # If no other process (ffmpeg) has this video open, assume it's done
+                videos.append(video)
 
-        # Return all videos except the last
-        return sorted(videos)[:-1]
+        return sorted(videos)
 
     def _mkv_to_mp4(self, input_path, output_path):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)

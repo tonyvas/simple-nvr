@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os, shutil
+import os, shutil, psutil
 from datetime import datetime, timezone
 
 class Video:
@@ -31,6 +31,17 @@ class Video:
 
     def get_age_seconds(self):
         return self.get_age().total_seconds()
+
+    def is_open(self):
+        for proc in psutil.process_iter():
+            try:
+                for file in proc.open_files():
+                    if file.path == self._filepath:
+                        return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        return False
 
     def exists(self):
         return os.path.exists(self._filepath)
