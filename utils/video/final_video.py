@@ -46,11 +46,16 @@ class FinalVideo(Video):
     def get_thumbnail_path(self):
         return os.path.join(self.get_dirpath(), f'{self.get_filename_no_ext()}.jpg')
 
-    def delete(self, remove_dir=False):
+    def delete(self):
         if not self.exists():
-            raise Exception(f'Video does not exist at current location!')
+            raise Exception(f'FinalVideo does not exist at current location!')
 
         if os.path.exists(self.get_thumbnail_path()):
             os.remove(self.get_thumbnail_path())
+
+        if os.path.exists(self.get_filepath()):
+            os.remove(self.get_filepath())
             
-        super().delete(remove_dir)
+        dirpath = self.get_dirpath()
+        if len(os.listdir(dirpath)) == 0:
+            os.rmdir(dirpath)

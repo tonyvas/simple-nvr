@@ -3,22 +3,22 @@ from time import sleep
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from ..logger import Logger
+from ..logger import loggerManager
 from ..video import FinalVideo, TempVideo
 
 class Recorder:
     _TEMP_EXTENSION = 'mkv'
     _FINAL_EXTENSION = 'mp4'
 
-    def __init__(self, logger:Logger, storage_dirpath:str, name:str, source:str, timezone:str, segment_duration_sec:int, record_audio:bool=True):
-        self._logger = logger
-        self._storage_dirpath = storage_dirpath
+    def __init__(self, name:str, storage_dirpath:str, source:str, timezone:str, segment_duration_sec:int, record_audio:bool=True):
         self._name = name
+        self._storage_dirpath = storage_dirpath
         self._source = source
         self._timezone = timezone
         self._segment_duration_sec = segment_duration_sec
         self._record_audio = record_audio
         
+        self._logger = loggerManager.new_logger(f'recorder-{name}')
         self._is_running = False
 
         self._threads = [
@@ -51,7 +51,7 @@ class Recorder:
 
     def start(self):
         try:
-            self._log_info('Starting recorder...')
+            self._logger.log_info('Starting recorder')
 
             if self.is_running():
                 # Prevent multiple instances
@@ -63,49 +63,40 @@ class Recorder:
             for thread in self._threads:
                 thread.start()
 
-            self._log_info('Recorder started!')
+            self._logger.log_info('Recorder started!')
 
             for thread in self._threads:
                 thread.join()
         except Exception as e:
             message = f'Failed to start: {e}'
-            self._log_error(message)
+            self._logger.log_critical(message)
             raise Exception(message)
 
     def stop(self):
         try:
-            self._log_info('Stopping recorder...')
+            self._logger.log_info('Stopping recorder')
 
             # Clear flag
             self._is_running = False
 
             if self._ffmpeg is not None:
                 # Stop FFmpeg subprocess if it is running
-                self._log_info('Terminating FFmpeg subprocess...')
+                self._logger.log_info('Terminating FFmpeg subprocess')
                 self._ffmpeg.terminate()
                 self._ffmpeg.wait()
 
-            self._log_info('Waiting for background threads to finish...')
+            self._logger.log_info('Waiting for background threads to finish')
             for thread in self._threads:
                 thread.join()
 
-            self._log_info('Recorder stopped!')
+            self._logger.log_info('Recorder stopped!')
         except Exception as e:
             message = f'Failed to stop: {e}'
-            self._log_error(message)
+            self._logger.log_critical(message)
             raise Exception(message)
 
-    def _log_info(self, message):
-        self._logger.log_info(f'{self._name}: {message}')
-
-    def _log_warning(self, message):
-        self._logger.log_warning(f'{self._name}: {message}')
-
-    def _log_error(self, message):
-        self._logger.log_error(f'{self._name}: {message}')
-
     def _start_video_mover(self):
-        self._log_info(f'Starting video mover...')
+        self._logger.log_info(f'Starting video mover')
 
         # Create directories if needed
         os.makedirs(self._temp_dirpath, exist_ok=True)
@@ -115,7 +106,7 @@ class Recorder:
             try:
                 self._move_completed_temp_videos()
             except Exception as e:
-                self._log_error(f'Failed to run mover: {e}')
+                self._logger.log_error(f'Failed to run mover: {e}')
             finally:
                 sleep(5)
 
@@ -125,16 +116,16 @@ class Recorder:
 
         while self.is_running():
             try:
-                self._log_info(f'Starting FFmpeg subprocess...')
+                self._logger.log_info(f'Starting FFmpeg subprocess')
 
                 self._ffmpeg = subprocess.Popen(ffmpeg_cmd, text=True, bufsize=1, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
                 while self._ffmpeg.poll() is None:
                     line = self._ffmpeg.stderr.readline().rstrip()
                     if line:
-                        self._log_info(f'FFmpeg: {line}')
+                        self._logger.log_debug(f'FFmpeg: {line}')
             except Exception as e:
-                self._log_error(f'Failed to run FFmpeg subprocess: {e}')
+                self._logger.log_error(f'Failed to run FFmpeg subprocess: {e}')
             finally:
                 sleep(5)
 
@@ -181,7 +172,7 @@ class Recorder:
             temp_mkv_path = temp_mkv_video.get_filepath()
 
             try:
-                self._log_info(f'Moving {temp_mkv_video.get_filename()}...')
+                self._logger.log_info(f'Moving {temp_mkv_video.get_filename()}')
 
                 # Get all paths
                 utc_datetime = temp_mkv_video.get_datetime()
@@ -197,28 +188,41 @@ class Recorder:
                 # Make directory for final path
                 os.makedirs(os.path.dirname(final_mp4_path), exist_ok=True)
 
-                # Convert temp mkv to mp4
-                self._mkv_to_mp4(temp_mkv_path, temp_mp4_path)
-                
-                # Move mp4 from temp to final directory
-                shutil.move(temp_mp4_path, final_mp4_path)
+                try:
+                    # Convert temp mkv to mp4
+                    self._logger.log_debug('Converting MKV to MP4')
+                    self._mkv_to_mp4(temp_mkv_path, temp_mp4_path)
+                except Exception as e:
+                    raise Exception(f'Failed to convert temporary to final video: {e}')
                 
                 try:
+                    # Move mp4 from temp to final directory
+                    self._logger.log_debug('Moving video into directory structure')
+                    shutil.move(temp_mp4_path, final_mp4_path)
+                except Exception as e:
+                    raise Exception(f'Failed to move final video into directory structure: {e}')
+                
+                try:
+                    self._logger.log_debug('Generating thumbnail')
                     self._generate_thumbnail(final_mp4_path, final_mp4_video.get_thumbnail_path())
                 except Exception as e:
-                    self._log_warning(f'Failed to create thumbnail: {e}')
+                    self._logger.log_warning(f'Failed to create thumbnail: {e}')
 
-                # Delete original temp mkv
-                temp_mkv_video.delete()
+                try:
+                    # Delete original temp mkv
+                    self._logger.log_debug('Deleting temporary video')
+                    temp_mkv_video.delete()
+                except Exception as e:
+                    raise Exception(f'Failed to remove temporary video: {e}')
+
+                self._logger.log_debug('Video moved!')
             except Exception as e:
-                self._log_error(f'Failed to move {temp_mkv_video.get_filename()}: {e}')
+                self._logger.log_error(f'Failed to move {temp_mkv_video.get_filename()}: {e}')
 
                 # If file is very small, delete it
-                if os.stat(temp_mkv_path).st_size < MIN_FILE_SIZE_BYTES:
-                    self._log_info(f'Temp video {temp_mkv_video.get_filename()} appears broken, deleting...')
+                if temp_mkv_video.exists() and temp_mkv_video.get_size() < MIN_FILE_SIZE_BYTES:
+                    self._logger.log_warning(f'Temp video {temp_mkv_video.get_filename()} appears broken, deleting')
                     temp_mkv_video.delete()
-            except Exception as e:
-                self._log_error(f'Failed to handle {temp_mkv_video.get_filename()}: {e}')
 
     def _get_completed_temp_videos(self):
         # List of files ending in .mkv

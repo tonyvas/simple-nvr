@@ -35,16 +35,11 @@ class Video:
     def exists(self):
         return os.path.exists(self._filepath)
 
-    def delete(self, remove_dir=False):
+    def delete(self):
         if not self.exists():
             raise Exception(f'Video does not exist at current location!')
 
         os.remove(self._filepath)
-
-        if remove_dir:
-            dirpath = self.get_dirpath()
-            if len(os.listdir(dirpath)) == 0:
-                os.rmdir(dirpath)
 
     def __lt__(self, v:Video):
         if not isinstance(v, Video):

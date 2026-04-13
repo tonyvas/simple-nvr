@@ -1,10 +1,9 @@
-from ..logger import Logger
 from ..recorder import Recorder
 from ..limit_manager import LimitManager
 
 class GlobalLimitManager(LimitManager):
-    def __init__(self, logger:Logger, recorders:list[Recorder], max_disk_bytes:int):
-        super().__init__(logger, max_disk_bytes=max_disk_bytes)
+    def __init__(self, recorders:list[Recorder], max_disk_bytes:int):
+        super().__init__('global', max_disk_bytes=max_disk_bytes)
 
         self._recorders = recorders
     

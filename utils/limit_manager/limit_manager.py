@@ -1,9 +1,9 @@
-from ..logger import Logger
+from ..logger import loggerManager
 from ..recorder import Recorder
 
 class LimitManager:
-    def __init__(self, logger:Logger, max_age_sec:int|None=None, max_disk_bytes:int|None=None):
-        self._logger = logger
+    def __init__(self, name:str, max_age_sec:int|None=None, max_disk_bytes:int|None=None):
+        self._logger = loggerManager.new_logger(f'pruner-{name}')
         self._max_age_sec = max_age_sec
         self._max_disk_bytes = max_disk_bytes
 
@@ -14,17 +14,7 @@ class LimitManager:
             self._check_storage_limit()
         except Exception as e:
             message = f'Failed to check limits: {e}'
-            self._log_error(message)
-            raise Exception(message)
-
-    def _log_info(self, message):
-        self._logger.log_info(message)
-
-    def _log_error(self, message):
-        self._logger.log_error(message)
-
-    def _log_warning(self, message):
-        self._logger.log_warning(message)
+            self._logger.log_error(message)
 
     def _get_videos(self):
         raise Exception(f'LimitManager interface _get_videos needs an override!')
@@ -51,16 +41,16 @@ class LimitManager:
                 oldest = videos.pop(0)
 
                 try:
-                    self._log_info(f'Deleting {oldest.get_filename()}, above disk limit!')
+                    self._logger.log_info(f'Deleting {oldest.get_filename()}, above disk limit!')
 
                     # Get its size
                     size = oldest.get_size()
 
                     # Delete video and update disk usage
-                    oldest.delete(True)
+                    oldest.delete()
                     bytes_over_limit -= size
                 except Exception as e:
-                    self._log_warning(f'Failed to delete {oldest.get_filename()}: {e}')
+                    self._logger.log_warning(f'Failed to delete {oldest.get_filename()}: {e}')
         except Exception as e:
             raise Exception(f'Failed to handle disk limit: {e}')
 
@@ -79,12 +69,12 @@ class LimitManager:
 
                     if age_sec > self._max_age_sec:
                         # If video is too old, delete it
-                        self._log_info(f'Deleting {video.get_filename()}, video is too old!')
-                        video.delete(True)
+                        self._logger.log_info(f'Deleting {video.get_filename()}, video is too old!')
+                        video.delete()
                     else:
                         # If not, stop checking. Further videos are even younger
                         break
                 except Exception as e:
-                    self._log_warning(f'Failed to delete {video.get_filename()}: {e}')
+                    self._logger.log_warning(f'Failed to delete {video.get_filename()}: {e}')
         except Exception as e:
             raise Exception(f'Failed to age limit: {e}')

@@ -15,3 +15,9 @@ class TempVideo(Video):
 
     def get_datetime(self):
         return datetime.fromtimestamp(int(self.get_filename_no_ext()), tz=timezone.utc)
+
+    def delete(self):
+        if not self.exists():
+            raise Exception(f'TempVideo does not exist at current location!')
+
+        os.remove(self.get_filepath())

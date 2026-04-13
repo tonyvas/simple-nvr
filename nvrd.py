@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 
 import os, sys, yaml, time, threading
+from datetime import datetime
 
-from utils.logger import Logger
+from utils.logger import loggerManager
 from utils.recorder import Recorder
 from utils.limit_manager import LimitManager, RecorderLimitManager, GlobalLimitManager
 
 SCRIPT_DIR = os.path.abspath(os.path.dirname(sys.argv[0]))
-LOG_DIRPATH = os.path.join(SCRIPT_DIR, 'logs')
+LOG_DIRPATH = os.path.join(SCRIPT_DIR, 'logs', datetime.now().strftime('%Y%m%d-%H%M%S'))
 DEFAULT_CONFIG_FILE = os.path.join(SCRIPT_DIR, 'config.yml')
-
-main_logger = Logger(os.path.join(LOG_DIRPATH, 'main.log'))
 
 def create_threads(targets:list):
     return [ threading.Thread(target=target, daemon=True) for target in targets ]
@@ -42,9 +41,7 @@ def setup_recorder(storage_dirpath:str, name:str, config:dict):
         if segment_duration_sec <= 0:
             raise Exception(f'Segment duration cannot be negative or zero!')
 
-        logger = Logger(os.path.join(LOG_DIRPATH, name, 'recorder.log'))
-
-        return Recorder(logger, monitor_dirpath, name, source, timezone, segment_duration_sec, record_audio)
+        return Recorder(name, monitor_dirpath, source, timezone, segment_duration_sec, record_audio)
     except Exception as e:
         raise Exception(f'Failed to setup recorder {name}: {e}')
 
@@ -99,13 +96,11 @@ def setup_limit_checkers(recorders:dict, config:dict):
                 raise Exception(f'Max disk cannot be negative!')
 
         # Create recorder limit checker
-        limit_logger = Logger(os.path.join(LOG_DIRPATH, name, 'limit.log'))
-        limit_checkers.append(RecorderLimitManager(limit_logger, recorder, max_age_sec=max_age_sec, max_disk_bytes=max_disk_bytes))
+        limit_checkers.append(RecorderLimitManager(name, recorder, max_age_sec=max_age_sec, max_disk_bytes=max_disk_bytes))
 
     # Create global limit checker
     # Do this last so it checks after the individual recorders do their thing
-    global_limit_logger = Logger(os.path.join(LOG_DIRPATH, 'limit.log'))
-    limit_checkers.append(GlobalLimitManager(global_limit_logger, recorders.values(), max_disk_bytes=global_max_disk_bytes))
+    limit_checkers.append(GlobalLimitManager(recorders.values(), max_disk_bytes=global_max_disk_bytes))
 
     return limit_checkers
 
@@ -114,22 +109,24 @@ def start_limit_checkers(limit_checkers:list[LimitManager], stop_event:threading
         idle_event.clear()
 
         for limit_checker in limit_checkers:
-            try:
-                limit_checker.run()
-            except Exception as e:
-                main_logger.log_warning(f'Failed to check limits: {e}')
+            limit_checker.run()
 
         # Wait for a minute or until event is set
         stop_event.wait(60)
         idle_event.set()
 
-def setup(config:dict):
-    main_logger.log_info(f'Setting up NVR...')
+def setup(config:dict, log_level):
+    loggerManager.set_log_level(log_level)
+    loggerManager.set_log_dirpath(LOG_DIRPATH)
 
-    main_logger.log_info(f'Setting up recorders...')
+    main_logger = loggerManager.new_logger('main')
+
+    main_logger.log_info(f'Setting up NVR')
+
+    main_logger.log_info(f'Setting up recorders')
     recorders = setup_recorders(config)
 
-    main_logger.log_info(f'Setting up limit checkers...')
+    main_logger.log_info(f'Setting up limit checkers')
     limit_checkers = setup_limit_checkers(recorders, config)
 
     # Event for when the limits thread should stop
@@ -145,7 +142,7 @@ def setup(config:dict):
     recorder_stop_threads = create_threads([ recorder.stop for recorder in recorders.values() ])
 
     def start():
-        main_logger.log_info('Starting NVR...')
+        main_logger.log_info('Starting NVR')
 
         # If not stopped, aka running
         if not stop_event.is_set():
@@ -154,10 +151,10 @@ def setup(config:dict):
         # Clear stop, aka start
         stop_event.clear()
 
-        main_logger.log_info('Starting recorders...')
+        main_logger.log_info('Starting recorders')
         start_threads(recorder_start_threads)
         
-        main_logger.log_info('Starting limit checkers...')
+        main_logger.log_info('Starting limit checkers')
         start_threads(limit_threads)
 
         main_logger.log_info('NVR has started!')
@@ -165,25 +162,42 @@ def setup(config:dict):
         join_threads([ *limit_threads, *recorder_start_threads ])
 
     def stop():
-        main_logger.log_info('Stopping NVR...')
+        main_logger.log_info('Stopping NVR')
         stop_event.set()
 
-        main_logger.log_info('Stopping recorders...')
+        main_logger.log_info('Stopping recorders')
         start_threads(recorder_stop_threads)
         join_threads(recorder_stop_threads)
 
-        main_logger.log_info('Waiting for limit checkers to stop...')
+        main_logger.log_info('Waiting for limit checkers to stop')
         are_checkers_idle.wait()
 
         main_logger.log_info('NVR has stopped!')
 
     return (start, stop)
 
+def get_cli_log_level():
+    LOG_LEVELS = {
+        'debug': loggerManager.LOG_LEVELS.DEBUG,
+        'info': loggerManager.LOG_LEVELS.INFO,
+        'warning': loggerManager.LOG_LEVELS.WARNING,
+        'error': loggerManager.LOG_LEVELS.ERROR,
+        'critical': loggerManager.LOG_LEVELS.CRITICAL,
+    }
+
+    args = sys.argv[1:]
+    for arg in args:
+        parts = arg.split('=')
+        if len(parts) == 2 and parts[0] == '--log-level':
+            level_str = parts[1]
+            return LOG_LEVELS[level_str]
+
+    return loggerManager.LOG_LEVELS.DEBUG
+
 if __name__ == '__main__':
     try:
-        main_logger.log_info(f'Reading config from {DEFAULT_CONFIG_FILE}...')
-        
         try:
+            print(f'Reading config from {DEFAULT_CONFIG_FILE}')
             config = yaml.safe_load(open(DEFAULT_CONFIG_FILE, 'r'))
         except FileNotFoundError as e:
             raise Exception(f'Config file at "{DEFAULT_CONFIG_FILE}" does not exist!')
@@ -191,7 +205,10 @@ if __name__ == '__main__':
             raise Exception(f'Failed to parse config: {e}')
 
         try:
-            (start, stop) = setup(config)
+            log_level = get_cli_log_level()
+            print(f'Using log level {log_level}!')
+
+            (start, stop) = setup(config, log_level)
         except Exception as e:
             raise Exception(f'Failed to setup NVR: {e}')
 
